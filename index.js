@@ -1,4 +1,5 @@
 const bodyParser = require('body-parser');
+const cors = require('cors');
 const crypto = require('crypto');
 const express = require('express');
 
@@ -22,7 +23,13 @@ const COMMENTS_MAX_AUTHOR = 32;
 const COMMENTS_MAX_CONTENT = 1500;
 const COMMENTS_PER_PAGE = 30;
 
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?
+	(
+		crypto.createHash('sha256')
+			.update(process.env.ADMIN_PASSWORD)
+			.digest('hex')
+			.toLowerCase()
+	) : null;
 
 const PORT = parseInt(process.env.PORT) || 11005;
 
@@ -91,6 +98,16 @@ class ApiError extends Error {
 	const mongoClient = await MongoClient.connect(mongoUrl, { useNewUrlParser: true, useUnifiedTopology: true });
 	const db = mongoClient.db(MONGODB_DBNAME);
 
+	try {
+		await db.collection(COLL_POSTS)
+			.createIndex({ postId: 1 });
+	} catch(err) {}
+
+	try {
+		await db.collection(COLL_COMMENTS)
+			.createIndex({ threadId: 1, subThreadId: 1 });
+	} catch(err) {}
+
 	const api = new GhostContentAPI({
 		url: GHOST_URL,
 		key: GHOST_KEY,
@@ -99,6 +116,9 @@ class ApiError extends Error {
 
 	const app = express();
 	app.use(bodyParser.json());
+	app.use(cors({
+		origin: GHOST_URL
+	}));
 
 	app.get('/', (req, res) => {
 		res.status(418).json({
@@ -110,7 +130,7 @@ class ApiError extends Error {
 
 	app.param('postId', (req, res, next, postId) => {
 		if(typeof postId !== 'string' || !/^[a-f0-9]{0,24}$/.test(postId))
-			return next(new Error("Wrong postId"));
+			return next(new ApiError("Wrong postId"));
 
 		req.getPost = async (projection = { _id: false }) => {
 			const post = await db.collection(COLL_POSTS)
@@ -293,7 +313,7 @@ class ApiError extends Error {
 		if(typeof password !== 'string')
 			throw new ApiError("No Password Given!");
 
-		if(!(ADMIN_PASSWORD !== '' && password === ADMIN_PASSWORD)) {
+		if(!(ADMIN_PASSWORD && password.toLowerCase() === ADMIN_PASSWORD)) {
 			const passwordCorrect = await pbkdf2Compare(comment.password, password);
 
 			if(!passwordCorrect)

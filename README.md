@@ -22,8 +22,9 @@ You can install this server by Docker.
 ```yaml
 version: '3'
 services:
-  kaede:
-    image: 'kaede'
+  kaede_api:
+    image: 'kaede-api'
+    restart: always
     environment:
       - GHOST_URL=https://blog-api.example.com
       - GHOST_KEY=123456789abcdef0123456789a
@@ -31,17 +32,21 @@ services:
       - MONGODB_HOST=db
       - MONGODB_USERNAME=root-username-here
       - MONGODB_PASSWORD=root-password-here
+    depends_on:
+      - database
+    ports:
+      - '11005:11005'
+    networks:
+      - kaede
 
   database:
-    image: 'mongo'
+    image: mongo
     restart: always
     environment:
       - MONGO_INITDB_ROOT_USERNAME=root-username-here
       - MONGO_INITDB_ROOT_PASSWORD=root-password-here
     volumes:
       - database:/data/db
-    expose:
-      - 27017
     networks:
       kaede:
         aliases:
