@@ -19,8 +19,8 @@ const COLL_POSTS = 'posts';
 const COLL_COMMENTS = 'comments';
 
 const COMMENTS_MAX_COUNT = parseInt(process.env.COMMENTS_MAX_COUNT) || 10000;
-const COMMENTS_MAX_AUTHOR = 32;
-const COMMENTS_MAX_CONTENT = 1500;
+const COMMENTS_MAX_AUTHOR = parseInt(process.env.COMMENTS_MAX_AUTHOR) || 32;
+const COMMENTS_MAX_CONTENT = parseInt(process.env.COMMENTS_MAX_CONTENT) || 1500;
 const COMMENTS_PER_PAGE = 30;
 
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?
@@ -130,7 +130,7 @@ class ApiError extends Error {
 
 	app.param('postId', (req, res, next, postId) => {
 		if(typeof postId !== 'string' || !/^[a-f0-9]{0,24}$/.test(postId))
-			return next(new ApiError("Wrong postId"));
+			return next(new ApiError("invalid-postid"));
 
 		req.getPost = async (projection = { _id: false }) => {
 			const post = await db.collection(COLL_POSTS)
@@ -142,7 +142,7 @@ class ApiError extends Error {
 
 			const ghostPost = await api.posts.read({id: postId});
 			if(!ghostPost || ghostPost.id !== postId)
-				throw new ApiError("No such posts");
+				throw new ApiError("no-such-post");
 
 			const written = await db.collection(COLL_POSTS).insertOne({
 				postId,
@@ -184,10 +184,10 @@ class ApiError extends Error {
 	register('post', '/:postId/likes', async (req, res) => {
 		const { _id: ensurePost } = await req.getPost({ _id: true });
 
-		const { likes: newLikes } = await db.collection(COLL_POSTS).findOneAndUpdate(
+		const { value: { likes: newLikes } } = await db.collection(COLL_POSTS).findOneAndUpdate(
 			{ _id: ensurePost },
 			{ $inc: { likes: 1 } },
-			{ new: true, projection: { likes: true } }
+			{ returnOriginal: false, projection: { likes: true } }
 		);
 
 		res.json({
@@ -197,12 +197,12 @@ class ApiError extends Error {
 	});
 
 	register('get', '/:postId/comments', async (req, res) => {
-		let page = 0;
+		let page = 1;
 		if(req.query.page) {
 			const parsedPage = parseInt(req.query.page);
 			if(
 				isFinite(parsedPage) &&
-				parsedPage >= 0 &&
+				parsedPage > 0 &&
 				(
 					COMMENTS_MAX_COUNT < 0 ||
 					page <= Math.ceil(COMMENTS_MAX_COUNT / COMMENTS_PER_PAGE)
@@ -219,7 +219,7 @@ class ApiError extends Error {
 		const commentsCount = await comments.count();
 		const commentsResult = await comments
 			.sort({ threadId: 1, subThreadId: 1 })
-			.skip(page * COMMENTS_PER_PAGE)
+			.skip((page - 1) * COMMENTS_PER_PAGE)
 			.limit(COMMENTS_PER_PAGE)
 			.toArray();
 
@@ -227,7 +227,7 @@ class ApiError extends Error {
 			ok: true,
 			pagination: {
 				current: page,
-				max: Math.floor(commentsCount / COMMENTS_PER_PAGE)
+				max: Math.ceil(commentsCount / COMMENTS_PER_PAGE)
 			},
 			comments: commentsResult
 		});
@@ -237,7 +237,15 @@ class ApiError extends Error {
 		const { _id: ensurePost } = await req.getPost({ _id: true });
 
 		if(!req.body || typeof req.body !== 'object')
-			throw new ApiError("Wrong body!");
+			throw new ApiError("invalid-body");
+
+		const existingComments = await db.collection(COLL_COMMENTS).find({
+			postId: req.params.postId
+		}, { projection: { _id: true } });
+
+		const commentsCount = await existingComments.count();
+		if((commentsCount >= COMMENTS_MAX_COUNT) && (COMMENTS_MAX_COUNT > 0))
+			throw new ApiError("too-many-comments");
 
 		const comment = {
 			postId: req.params.postId
@@ -265,19 +273,20 @@ class ApiError extends Error {
 		}
 
 		if(typeof req.body.content !== 'string')
-			throw new ApiError("Invalid content!");
+			throw new ApiError("invalid-content");
 
 		comment.content = req.body.content.slice(0, COMMENTS_MAX_CONTENT);
 
 		if(typeof req.body.author !== 'string')
-			throw new ApiError("Invalid author!");
+			throw new ApiError("invalid-author");
 
 		comment.author = req.body.author.slice(0, COMMENTS_MAX_AUTHOR);
 
 		if(typeof req.body.password !== 'string')
-			throw new ApiError("Invalid password!");
+			throw new ApiError("invalid-password");
 
 		comment.password = await pbkdf2(req.body.password);
+		comment.date = Date.now();
 
 		const inserted = await db.collection(COLL_COMMENTS)
 			.insertOne(comment);
@@ -295,7 +304,7 @@ class ApiError extends Error {
 		const deleted = [];
 		const commentId = req.params.commentId;
 		if(typeof commentId !== 'string' || !/^[a-f0-9]{24}$/.test(commentId))
-			throw new ApiError("Invalid commentId!");
+			throw new ApiError("invalid-commentid");
 
 		const commentObjId = new ObjectId(commentId);
 		const comment = await db.collection(COLL_COMMENTS)
@@ -307,17 +316,17 @@ class ApiError extends Error {
 			});
 
 		if(!comment || comment.deleted)
-			throw new ApiError("No such comment!");
+			throw new ApiError("no-such-comment");
 
 		const password = req.body.password;
 		if(typeof password !== 'string')
-			throw new ApiError("No Password Given!");
+			throw new ApiError("invalid-password");
 
 		if(!(ADMIN_PASSWORD && password.toLowerCase() === ADMIN_PASSWORD)) {
 			const passwordCorrect = await pbkdf2Compare(comment.password, password);
 
 			if(!passwordCorrect)
-				throw new ApiError("Wrong password!");
+				throw new ApiError("invalid-password");
 		}
 
 		const isReply = comment.subThreadId !== 0;

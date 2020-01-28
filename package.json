@@ -4,7 +4,8 @@
   "description": "An api server for kaede, a neat ghost theme",
   "main": "index.js",
   "scripts": {
-    "start": "node index",
+    "start": "cross-env NODE_ENV=production node index",
+    "dev": "node -r dotenv/config index.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
@@ -32,6 +33,7 @@
     "mongodb": "^3.5.1"
   },
   "devDependencies": {
-    "cross-env": "^6.0.3"
+    "cross-env": "^6.0.3",
+    "dotenv": "^8.2.0"
   }
 }
