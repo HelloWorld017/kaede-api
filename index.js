@@ -23,13 +23,7 @@ const COMMENTS_MAX_AUTHOR = parseInt(process.env.COMMENTS_MAX_AUTHOR) || 32;
 const COMMENTS_MAX_CONTENT = parseInt(process.env.COMMENTS_MAX_CONTENT) || 1500;
 const COMMENTS_PER_PAGE = 30;
 
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?
-	(
-		crypto.createHash('sha256')
-			.update(process.env.ADMIN_PASSWORD)
-			.digest('hex')
-			.toLowerCase()
-	) : null;
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD.toLowerCase() || null;
 
 const PORT = parseInt(process.env.PORT) || 11005;
 
@@ -286,6 +280,11 @@ class ApiError extends Error {
 			throw new ApiError("invalid-password");
 
 		comment.password = await pbkdf2(req.body.password);
+
+		if(ADMIN_PASSWORD && req.body.password.toLowerCase() === ADMIN_PASSWORD) {
+			comment.admin = true;
+		}
+
 		comment.date = Date.now();
 
 		const inserted = await db.collection(COLL_COMMENTS)
