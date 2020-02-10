@@ -23,7 +23,7 @@ const COMMENTS_MAX_AUTHOR = parseInt(process.env.COMMENTS_MAX_AUTHOR) || 32;
 const COMMENTS_MAX_CONTENT = parseInt(process.env.COMMENTS_MAX_CONTENT) || 1500;
 const COMMENTS_PER_PAGE = 30;
 
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD.toLowerCase() || null;
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ? process.env.ADMIN_PASSWORD.toLowerCase() : null;
 
 const PORT = parseInt(process.env.PORT) || 11005;
 
@@ -77,10 +77,11 @@ const pbkdf2Compare = async (passwordSalted, passwordRaw) => {
 };
 
 class ApiError extends Error {
-	constructor(message) {
+	constructor(message, statusCode = 422) {
 		super(message);
 
 		this.isApiError = true;
+		this.statusCode = statusCode;
 	}
 }
 
@@ -134,9 +135,9 @@ class ApiError extends Error {
 				return post;
 			}
 
-			const ghostPost = await api.posts.read({id: postId});
+			const ghostPost = await api.posts.read({id: postId}).catch(err => null);
 			if(!ghostPost || ghostPost.id !== postId)
-				throw new ApiError("no-such-post");
+				throw new ApiError("no-such-post", 404);
 
 			const written = await db.collection(COLL_POSTS).insertOne({
 				postId,
@@ -315,7 +316,7 @@ class ApiError extends Error {
 			});
 
 		if(!comment || comment.deleted)
-			throw new ApiError("no-such-comment");
+			throw new ApiError("no-such-comment", 404);
 
 		const password = req.body.password;
 		if(typeof password !== 'string')
@@ -395,7 +396,7 @@ class ApiError extends Error {
 
 	app.use((err, req, res, next) => {
 		if(err.isApiError) {
-			res.status(422).json({
+			res.status(err.statusCode).json({
 				ok: false,
 				reason: err.message
 			});
