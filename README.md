@@ -23,7 +23,7 @@ You can install this server by Docker.
 version: '3'
 services:
   kaede_api:
-    image: 'kaede-api'
+    image: 'khinenw/kaede-api:1.0.0'
     restart: always
     environment:
       - GHOST_URL=https://blog-api.example.com
@@ -70,6 +70,8 @@ networks:
 | MONGODB_USERNAME   | **(optional)** Username of MongoDB. Empty for disable Authentication.                        |                       |
 | MONGODB_PASSWORD   | **(optional)** Password of MongoDB.                                                          |                       |
 | COMMENTS_MAX_COUNT | **(optional)** Maximum amount of comments per post. Negative for disable limit.              | 10000                 |
+| COMMENTS_MAX_AUTHOR| **(optional)** Maximum length of author name.                                                | 32                    |
+| COMMENTS_MAX_CONTENT|**(optional)** Maximum length of content.                                                    | 1500                  |
 | ADMIN_PASSWORD     | **(optional)** Site admin password for comments. Please refer to the next paragraph.         |                       |
 | PORT               | **(optional)** Port of API Server                                                            | 11005                 |
 
@@ -77,10 +79,14 @@ networks:
 You'll need a [Ghost API Key](https://ghost.org/docs/api/v3/content/#key) to use this server.  
 You can get it on `Integrations > Add custom integraion > Content API Key` in your Ghost admin page.
 
-## Admin Password
+### Admin Password
 You can delete any comment with this password and you can emphasize your comment by entering this password when you're writing comment.  
 You can disable Admin Login by set this as empty value.
 
 It **should be hashed** using sha256.
   * Windows: `echo | set /p="(PASSWORD HERE)" | openssl dgst -sha256 -hex`
   * Linux: `echo -n "(PASSWORD HERE)" | openssl dgst -sha256 -hex`
+
+### Max length
+When you update `COMMENT_MAX_AUTHOR` and `COMMENT_MAX_CONTENT`, you should update
+`$KaedeCommentsMaxAuthor` and `$KaedeCommentsMaxContent` options in theme configuration, too.
