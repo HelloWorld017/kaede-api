@@ -23,7 +23,7 @@ You can install this server by Docker.
 version: '3'
 services:
   kaede_api:
-    image: 'khinenw/kaede-api:1.0.0'
+    image: 'khinenw/kaede-api:1.0.1'
     restart: always
     environment:
       - GHOST_URL=https://blog-api.example.com
