@@ -83,9 +83,15 @@ You can get it on `Integrations > Add custom integraion > Content API Key` in yo
 You can delete any comment with this password and you can emphasize your comment by entering this password when you're writing comment.  
 You can disable Admin Login by set this as empty value.
 
-It **should be hashed** using sha256.
-  * Windows: `echo | set /p="(PASSWORD HERE)" | openssl dgst -sha256 -hex`
-  * Linux: `echo -n "(PASSWORD HERE)" | openssl dgst -sha256 -hex`
+It **should be hashed** using sha256 + pbkdf2.  
+You can use `node /usr/src/app/genpassword` in your docker container to generate your password.
+```console
+$ sudo docker ps
+CONTAINER ID        ...   NAMES
+0a8e7db176b4        ...   kaede_kaede_api_1
+
+$ sudo docker exec -it kaede_kaede_api_1 node /usr/src/app/genpassword
+```
 
 ### Max length
 When you update `COMMENT_MAX_AUTHOR` and `COMMENT_MAX_CONTENT`, you should update

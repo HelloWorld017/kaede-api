@@ -1,7 +1,7 @@
 const bodyParser = require('body-parser');
 const cors = require('cors');
-const crypto = require('crypto');
 const express = require('express');
+const { pbkdf2, pbkdf2Compare } = require('./src/pbkdf2');
 
 const GhostContentAPI = require('@tryghost/content-api');
 const { ObjectId, MongoClient } = require('mongodb');
@@ -23,7 +23,7 @@ const COMMENTS_MAX_AUTHOR = parseInt(process.env.COMMENTS_MAX_AUTHOR) || 32;
 const COMMENTS_MAX_CONTENT = parseInt(process.env.COMMENTS_MAX_CONTENT) || 1500;
 const COMMENTS_PER_PAGE = 30;
 
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ? process.env.ADMIN_PASSWORD.toLowerCase() : null;
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ? process.env.ADMIN_PASSWORD : null;
 
 const PORT = parseInt(process.env.PORT) || 11005;
 
@@ -34,46 +34,6 @@ const genId = () => {
 	return Math.floor(Date.now() / 1000) * 100000 +
 		Math.floor(Math.random() * 100) * 1000 +
 		counter;
-};
-
-const pbkdf2 = async (password, salt) => {
-	if(salt === undefined) {
-		salt = await new Promise((resolve, reject) => {
-			crypto.randomBytes(9, (err, buf) => {
-				if(err) return reject(err);
-				resolve(buf);
-			});
-		});
-	} else {
-		salt = Buffer.from(salt, 'base64');
-	}
-
-	const passwordHashed = await new Promise((resolve, reject) => {
-		crypto.pbkdf2(
-			password.slice(0, 32), // As password is client-side hashed. (sha256)
-			salt,
-			1e+4,
-			36,
-			'sha256',
-			(err, derivedKey) => {
-				if(err) return reject(err);
-				resolve(
-					`${salt.toString('base64')}:${derivedKey.toString('base64')}`
-				);
-			}
-		);
-	});
-
-	return passwordHashed;
-};
-
-const pbkdf2Compare = async (passwordSalted, passwordRaw) => {
-	if(passwordSalted === '') return false;
-
-	const [salt, passwordHash] = passwordSalted.split(':');
-	const passwordTarget = await pbkdf2(passwordRaw, salt);
-
-	return passwordTarget === passwordSalted;
 };
 
 class ApiError extends Error {
@@ -282,8 +242,12 @@ class ApiError extends Error {
 
 		comment.password = await pbkdf2(req.body.password);
 
-		if(ADMIN_PASSWORD && req.body.password.toLowerCase() === ADMIN_PASSWORD) {
-			comment.admin = true;
+		if(ADMIN_PASSWORD) {
+			const isAdmin = await pbkdf2Compare(ADMIN_PASSWORD, req.body.password);
+
+			if(isAdmin) {
+				comment.admin = true;
+			}
 		}
 
 		comment.date = Date.now();
@@ -322,7 +286,13 @@ class ApiError extends Error {
 		if(typeof password !== 'string')
 			throw new ApiError("invalid-password");
 
-		if(!(ADMIN_PASSWORD && password.toLowerCase() === ADMIN_PASSWORD)) {
+		let isAdmin = false;
+
+		if(ADMIN_PASSWORD) {
+			isAdmin = await pbkdf2Compare(ADMIN_PASSWORD, password);
+		}
+
+		if(!isAdmin) {
 			const passwordCorrect = await pbkdf2Compare(comment.password, password);
 
 			if(!passwordCorrect)
