@@ -1,38 +1,43 @@
 {
   "name": "kaede-api",
-  "version": "1.0.2",
+  "version": "2.0.0",
+  "private": true,
   "description": "An api server for kaede, a neat ghost theme",
-  "main": "index.js",
-  "scripts": {
-    "start": "node index",
-    "dev": "node -r dotenv/config index.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/HelloWorld017/kaede-api.git"
-  },
-  "keywords": [
-    "ghost",
-    "blog",
-    "skin",
-    "comment",
-    "like"
-  ],
-  "author": "Khinenw",
   "license": "MIT",
-  "bugs": {
-    "url": "https://github.com/HelloWorld017/kaede-api/issues"
+  "author": "Khinenw",
+  "repository": "https://github.com/HelloWorld017/kaede-api",
+  "type": "module",
+  "scripts": {
+    "build": "rolldown -c",
+    "dev": "mkdir -p data && pnpm build && concurrently --kill-others 'pnpm dev:bundle' 'pnpm dev:server'",
+    "dev:bundle": "rolldown -c --watch",
+    "dev:server": "dotenv -- workerd serve --watch backend.capnp config --import-path ./dist --directory-path do-storage=./data --socket-addr http=127.0.0.1:11005",
+    "start": "kaede-api",
+    "check": "pnpm lint && pnpm format:check && pnpm typecheck",
+    "lint": "oxlint --deny-warnings",
+    "format": "oxfmt --write .",
+    "format:check": "oxfmt --check .",
+    "typecheck": "tsc --noEmit",
+    "password": "node scripts/password.mjs"
   },
-  "homepage": "https://github.com/HelloWorld017/kaede-api#readme",
   "dependencies": {
-    "@tryghost/content-api": "^1.3.6",
-    "body-parser": "^1.19.0",
-    "cors": "^2.8.5",
-    "express": "^4.17.1",
-    "mongodb": "^3.5.1"
+    "@tryghost/content-api": "1.12.13",
+    "axios": "1.20.0",
+    "hono": "4.13.14",
+    "kysely": "0.29.7",
+    "zod": "4.6.7"
   },
   "devDependencies": {
-    "dotenv": "^8.2.0"
-  }
+    "@cloudflare/workers-types": "5.20261025.1",
+    "@types/node": "^26.6.6",
+    "@types/tryghost__content-api": "1.3.17",
+    "concurrently": "10.0.6",
+    "dotenv-cli": "11.0.0",
+    "oxfmt": "0.74.0",
+    "oxlint": "1.89.0",
+    "oxlint-tsgolint": "7.0.2005",
+    "rolldown": "1.2.15",
+    "typescript": "7.0.2"
+  },
+  "packageManager": "pnpm@12.9.0"
 }

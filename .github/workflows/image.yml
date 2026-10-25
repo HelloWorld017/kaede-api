@@ -1,0 +1,100 @@
+name: Container image
+
+on:
+  push:
+    branches: [master]
+    tags: ['v*.*.*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: image-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  image:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: NixOS/nix-installer-action@62c1943b776c509394b550f3f983adc14e9212d6
+        with:
+          extra-conf: |
+            experimental-features = nix-command flakes
+      - name: Build and check
+        run: nix build .#image --print-build-logs
+      - name: Image metadata
+        if: github.event_name != 'pull_request'
+        id: metadata
+        uses: docker/metadata-action@v6.2.0
+        with:
+          images: ghcr.io/${{ github.repository }}
+          flavor: latest=false
+          tags: type=sha,format=long,suffix=-${{ matrix.arch }}
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Push image
+        if: github.event_name != 'pull_request'
+        env:
+          IMAGE_TAGS: ${{ steps.metadata.outputs.tags }}
+        run: |
+          docker load --input result
+          while IFS= read -r tag; do
+            docker tag kaede-api:latest "$tag"
+            docker push "$tag"
+          done <<< "$IMAGE_TAGS"
+
+  manifest:
+    if: github.event_name != 'pull_request'
+    needs: image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Image metadata
+        id: metadata
+        uses: docker/metadata-action@v6.2.0
+        with:
+          images: ghcr.io/${{ github.repository }}
+          flavor: latest=false
+          tags: |
+            type=sha,format=long
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/master' }}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+      - uses: docker/login-action@v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/setup-buildx-action@v4.4.1
+      - name: Push multi-platform manifest
+        env:
+          IMAGE_TAGS: ${{ steps.metadata.outputs.tags }}
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
+        run: |
+          registry_image="${IMAGE_NAME,,}"
+          while IFS= read -r tag; do
+            docker buildx imagetools create --tag "$tag" \
+              "$registry_image:sha-${{ github.sha }}-amd64" \
+              "$registry_image:sha-${{ github.sha }}-arm64"
+          done <<< "$IMAGE_TAGS"

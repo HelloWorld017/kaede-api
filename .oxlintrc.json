@@ -1,0 +1,15 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["eslint", "typescript", "oxc", "import"],
+  "env": { "browser": true, "node": true },
+  "options": { "typeAware": true },
+  "categories": { "correctness": "error", "suspicious": "warn" },
+  "rules": {
+    "no-shadow": "off",
+    "typescript/no-unsafe-type-assertion": "off",
+    "typescript/consistent-type-imports": "error",
+    "eqeqeq": "error",
+    "curly": "error"
+  },
+  "ignorePatterns": ["dist/**", "data/**"]
+}

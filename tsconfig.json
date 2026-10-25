@@ -1,0 +1,34 @@
+{
+  "compilerOptions": {
+    // Strictness
+    "strict": true,
+    "exactOptionalPropertyTypes": false,
+
+    // Module / Resolution
+    "module": "preserve",
+    "moduleDetection": "force",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "isolatedModules": true,
+    "esModuleInterop": true,
+    "paths": {
+      "@/*": ["./src/*"]
+    },
+
+    // Types
+    "target": "esnext",
+    "lib": ["esnext"],
+    "types": [
+      "node",
+      "@cloudflare/workers-types"
+    ],
+
+    // Others
+    "allowJs": true,
+    "skipLibCheck": true,
+    "emitDeclarationOnly": true,
+    "declaration": true,
+    "outDir": "./dist"
+  },
+  "include": ["src/**/*.ts", "scripts/**/*.ts"]
+}
