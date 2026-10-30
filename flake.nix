@@ -16,12 +16,13 @@
           metadata = builtins.fromJSON (builtins.readFile ./package.json);
           nodejs = pkgs.nodejs_26;
           workerd = pkgs.callPackage ./build/workerd.nix {};
-          passwordSource = pkgs.lib.fileset.toSource {
-            root = ./.;
-            fileset = pkgs.lib.fileset.unions [ ./scripts/password.ts ./src/utils/crypto.ts ];
-          };
           genpassword = pkgs.writeShellScriptBin "genpassword" ''
-            exec ${nodejs}/bin/node ${passwordSource}/scripts/password.ts "$@"
+            set -euo pipefail
+            read -r -s -p 'Admin password: ' PASSWORD
+            printf '\n' >&2
+            export PASSWORD
+            exec ${workerd}/bin/workerd test ${./backend.capnp} 'passwordConfig:genpassword:*' \
+              --import-path ${app}/share/${name} "$@"
           '';
 
           app = pkgs.stdenvNoCC.mkDerivation (finalAttrs: {
@@ -57,6 +58,7 @@
             installPhase = ''
               mkdir -p "$out/share/${name}"
               cp dist/backend.bundle.js "$out/share/${name}/"
+              cp dist/password.bundle.js "$out/share/${name}/"
             '';
           });
 

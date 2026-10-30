@@ -1,5 +1,18 @@
 using Workerd = import "/workerd/workerd.capnp";
 
+const passwordConfig :Workerd.Config = (
+  services = [
+    (
+      name = "genpassword",
+      worker = (
+        compatibilityDate = "2026-10-25",
+        modules = [(name = "password.bundle.js", esModule = embed "/password.bundle.js")],
+        bindings = [(name = "PASSWORD", fromEnvironment = "PASSWORD")]
+      )
+    )
+  ]
+);
+
 const config :Workerd.Config = (
   services = [
     (
