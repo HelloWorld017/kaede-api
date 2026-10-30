@@ -35,10 +35,7 @@
               pnpm = pkgs.pnpm;
               pname = "${name}-deps";
               fetcherVersion = 5;
-              hash = {
-                x86_64-linux = "sha256-0vslkZRFk/rFUV1m+Vsj8+YVwbZJSedq9gUNh75i8aw=";
-                aarch64-linux = "";
-              }.${system};
+              hash = "sha256-0vslkZRFk/rFUV1m+Vsj8+YVwbZJSedq9gUNh75i8aw=";
             };
 
             nativeBuildInputs = [
@@ -93,6 +90,7 @@
               Env = [
                 "BACKEND_SQLITE_PATH=/data"
                 "PORT=11005"
+                "SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt"
               ];
               ExposedPorts = { "11005/tcp" = {}; };
               Volumes = { "/data" = {}; };
