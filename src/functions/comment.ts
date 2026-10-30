@@ -80,7 +80,7 @@ export const listComments = route({
 
     return response({
       ok: true,
-      pagination: { current: query.page, max: Math.ceil(total!.count / perPage) },
+      pagination: { current: query.page, max: Math.ceil(total.count / perPage) },
       comments: rows.map(row => publicComment(row, params.postId)),
     });
   },
@@ -142,7 +142,7 @@ export const addComment = route({
 
     if (!created) {
       const [total] = await store.sql(count);
-      if (limits.maxCount > 0 && total!.count >= limits.maxCount) {
+      if (limits.maxCount > 0 && total.count >= limits.maxCount) {
         throw new ApiError('too-many-comments');
       }
 
@@ -203,13 +203,11 @@ export const deleteComment = route({
         .returning('id'),
     ]);
 
-    if (!changed!.length) {
+    if (!changed.length) {
       throw new ApiError('no-such-comment', 404);
     }
 
-    const deleted = [...(comment.threadId === null ? [] : changed!), ...removed!].map(
-      row => row.id,
-    );
+    const deleted = [...(comment.threadId === null ? [] : changed), ...removed].map(row => row.id);
 
     return response({
       ok: true,

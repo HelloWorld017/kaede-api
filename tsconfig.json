@@ -18,10 +18,7 @@
     // Types
     "target": "esnext",
     "lib": ["esnext"],
-    "types": [
-      "node",
-      "@cloudflare/workers-types"
-    ],
+    "types": ["node", "@cloudflare/workers-types"],
 
     // Others
     "allowJs": true,

@@ -50,7 +50,7 @@ export async function verifyPassword(stored: string | null | undefined, password
       target.length,
     );
 
-    return actual.reduce((diff, byte, index) => diff | (byte ^ target[index]!), 0) === 0;
+    return actual.reduce((diff, byte, index) => diff | (byte ^ target[index]), 0) === 0;
   } catch {
     return false;
   }

@@ -1,7 +1,9 @@
 {
-  description = "Kaede API — workerd, Hono and SQLite";
-
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+  inputs = {
+    nixpkgs = {
+      url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+    };
+  };
 
   outputs = { nixpkgs, ... }:
     let
@@ -12,48 +14,52 @@
           pkgs = import nixpkgs { inherit system; };
           name = "kaede-api";
           metadata = builtins.fromJSON (builtins.readFile ./package.json);
-          inherit (pkgs) pnpm;
+          nodejs = pkgs.nodejs_26;
           workerd = pkgs.callPackage ./build/workerd.nix {};
+          passwordSource = pkgs.lib.fileset.toSource {
+            root = ./.;
+            fileset = pkgs.lib.fileset.unions [ ./scripts/password.ts ./src/utils/crypto.ts ];
+          };
+          genpassword = pkgs.writeShellScriptBin "genpassword" ''
+            exec ${nodejs}/bin/node ${passwordSource}/scripts/password.ts "$@"
+          '';
+
           app = pkgs.stdenvNoCC.mkDerivation (finalAttrs: {
             pname = "${name}-app";
             version = metadata.version;
-            src = pkgs.lib.cleanSourceWith {
-              src = ./.;
-              filter = path: type:
-                let base = builtins.baseNameOf path;
-                in !(builtins.elem base [ ".git" "node_modules" "dist" "data" "result" ])
-                  && !(pkgs.lib.hasPrefix ".env" base);
-            };
+            src = ./.;
+
             pnpmDeps = pkgs.fetchPnpmDeps {
-              inherit (finalAttrs) version;
-              src = pkgs.lib.fileset.toSource {
-                root = ./.;
-                fileset = pkgs.lib.fileset.unions [ ./package.json ./pnpm-lock.yaml ./pnpm-workspace.yaml ];
-              };
-              inherit pnpm;
+              inherit (finalAttrs) version src;
+              pnpm = pkgs.pnpm;
               pname = "${name}-deps";
               fetcherVersion = 5;
-              prePnpmInstall = ''
-                export pnpm_config_force_ignores_platform=false
-              '';
-              hash = "sha256-gpZHfL4F7muLGQNUQQtut4tq8DjzoqqZh4BSMitcrTM=";
+              hash = {
+                x86_64-linux = "sha256-0vslkZRFk/rFUV1m+Vsj8+YVwbZJSedq9gUNh75i8aw=";
+                aarch64-linux = "";
+              }.${system};
             };
-            nativeBuildInputs = [ pkgs.nodejs pnpm pkgs.pnpmConfigHook pkgs.autoPatchelfHook ];
-            buildInputs = [ pkgs.stdenv.cc.cc.lib ];
-            preBuild = ''
-              autoPatchelf node_modules
-            '';
+
+            nativeBuildInputs = [
+              nodejs
+              pkgs.pnpm
+              pkgs.pnpmConfigHook
+              pkgs.autoPatchelfHook
+            ];
+
             buildPhase = ''
               runHook preBuild
               pnpm check
               pnpm build
               runHook postBuild
             '';
+
             installPhase = ''
               mkdir -p "$out/share/${name}"
               cp dist/backend.bundle.js "$out/share/${name}/"
             '';
           });
+
           entrypoint = pkgs.writeShellScriptBin name ''
             set -euo pipefail
             export BACKEND_SQLITE_PATH="''${BACKEND_SQLITE_PATH:-./data}"
@@ -63,30 +69,50 @@
               --directory-path "do-storage=$BACKEND_SQLITE_PATH" \
               --socket-addr "http=*:''${PORT:-11005}" "$@"
           '';
+
           image = pkgs.dockerTools.buildLayeredImage {
             inherit name;
             tag = "latest";
-            contents = with pkgs.dockerTools; [ caCertificates fakeNss ];
+            contents = with pkgs.dockerTools; [
+              caCertificates
+              binSh
+              fakeNss
+              usrBinEnv
+              genpassword
+            ];
+
             extraCommands = ''
               mkdir -p data tmp
               chmod 1777 tmp
             '';
+
             config = {
               Entrypoint = [ "${entrypoint}/bin/${name}" ];
-              Env = [ "BACKEND_SQLITE_PATH=/data" "PORT=11005" ];
-              ExposedPorts."11005/tcp" = {};
-              Volumes."/data" = {};
-              Labels = {
-                "org.opencontainers.image.title" = name;
-                "org.opencontainers.image.source" = metadata.repository;
-                "org.opencontainers.image.version" = metadata.version;
-                "org.opencontainers.image.licenses" = metadata.license;
-              };
+              Env = [
+                "BACKEND_SQLITE_PATH=/data"
+                "PORT=11005"
+              ];
+              ExposedPorts = { "11005/tcp" = {}; };
+              Volumes = { "/data" = {}; };
             };
           };
         in {
-          packages = { default = entrypoint; inherit app image pnpm workerd; };
-          devShell = pkgs.mkShell { packages = [ pkgs.nodejs pnpm workerd entrypoint ]; };
+          packages = {
+            default = pkgs.symlinkJoin {
+              inherit name;
+              paths = [ entrypoint genpassword ];
+            };
+            inherit image genpassword;
+          };
+
+          devShell = pkgs.mkShell {
+            packages = [
+              nodejs
+              pkgs.pnpm
+              workerd
+              genpassword
+            ];
+          };
         };
     in {
       packages = forAllSystems (system: (perSystem system).packages);
