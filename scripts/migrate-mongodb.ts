@@ -1,4 +1,4 @@
-import { createHash, createHmac } from 'node:crypto';
+import { createHash, createHmac, randomUUID } from 'node:crypto';
 import { readFile, readdir, mkdir } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -42,6 +42,7 @@ const integer = z.preprocess(value => {
   }
   return typeof value === 'string' && /^\d+$/.test(value) ? Number(value) : value;
 }, z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER));
+
 const postId = z.string().regex(/^[a-f0-9]{24}$/);
 const objectId = z.union([postId, z.object({ $oid: postId }).transform(value => value.$oid)]);
 const postSchema = z.object({ postId, likes: integer });
@@ -59,6 +60,7 @@ const commentSchema = z
     deleted: z.boolean().optional(),
   })
   .transform(({ _id: id, ...comment }) => ({ ...comment, id }));
+
 type LegacyComment = z.infer<typeof commentSchema>;
 
 async function load<T>(path: string, schema: z.ZodType<T>): Promise<T[]> {
@@ -69,11 +71,13 @@ async function load<T>(path: string, schema: z.ZodType<T>): Promise<T[]> {
         .split(/\r?\n/)
         .filter(Boolean)
         .map(line => JSON.parse(line));
+
   return rows.map((row, index) => {
     const parsed = schema.safeParse(row);
     if (!parsed.success) {
       throw new Error(`${path}: document ${index + 1}: ${parsed.error.message}`);
     }
+
     return parsed.data;
   });
 }
@@ -100,6 +104,7 @@ async function main() {
     }
     groups.set(post.postId, { likes: post.likes, comments: [] });
   }
+
   const ids = new Set<string>();
   for (const comment of comments) {
     if (ids.has(comment.id)) {
@@ -119,15 +124,19 @@ async function main() {
       if (!threads.has(comment.threadId)) {
         threads.set(comment.threadId, []);
       }
+
       threads.get(comment.threadId)!.push(comment);
     }
+
     const rows: (string | number | null)[][] = [];
     let sequence = 0;
+
     for (const [threadId, thread] of [...threads].sort(([a], [b]) => a - b)) {
       const roots = thread.filter(comment => comment.subThreadId === 0);
       if (roots.length > 1) {
         throw new Error(`Duplicate root: ${id}/${threadId}`);
       }
+
       const parent = ++sequence;
       const root = roots[0];
       const row = (comment: LegacyComment, seq: number, parentId: number | null) => [
@@ -141,6 +150,7 @@ async function main() {
         Number(comment.admin ?? false),
         Number(comment.deleted ?? false),
       ];
+
       if (root) {
         rows.push(row(root, parent, null));
       } else {
@@ -148,13 +158,15 @@ async function main() {
         placeholders++;
         rows.push([parent, uuid(`orphan:${id}:${threadId}`), null, '', '', '', 0, 0, 1]);
       }
+
       for (const reply of thread
         .filter(comment => comment.subThreadId !== 0)
         .sort((a, b) => a.subThreadId - b.subThreadId || a.id.localeCompare(b.id))) {
         rows.push(row(reply, ++sequence, parent));
       }
     }
-    return { id, likes: group.likes, rows };
+
+    return { uniqueId: randomUUID(), id, likes: group.likes, rows };
   });
 
   const output = resolve(values.output!);
@@ -164,13 +176,37 @@ async function main() {
     }
     throw error;
   });
+
   if (existing.length) {
     throw new Error(`Output directory must be empty: ${output}`);
   }
+
   const directory = join(output, namespace);
   await mkdir(directory, { recursive: true });
+  const registry = new DatabaseSync(join(directory, `${storageId('posts')}.sqlite`));
+
+  try {
+    registry.exec(`
+      BEGIN IMMEDIATE;
+      CREATE TABLE posts (
+        uniqueId TEXT NOT NULL PRIMARY KEY,
+        id TEXT NOT NULL UNIQUE,
+        slug TEXT UNIQUE
+      );
+    `);
+
+    const insert = registry.prepare('INSERT INTO posts (uniqueId,id,slug) VALUES (?, ?, NULL)');
+    for (const post of data) {
+      insert.run(post.uniqueId, post.id);
+    }
+
+    registry.exec('COMMIT');
+  } finally {
+    registry.close();
+  }
+
   for (const post of data) {
-    const db = new DatabaseSync(join(directory, `${storageId(post.id)}.sqlite`));
+    const db = new DatabaseSync(join(directory, `${storageId(post.uniqueId)}.sqlite`));
     try {
       db.exec(`
         BEGIN IMMEDIATE;
@@ -188,21 +224,24 @@ async function main() {
         );
         CREATE INDEX comments_thread ON comments(threadId);
       `);
+
       const insert = db.prepare(
         'INSERT INTO comments (sequence,id,threadId,author,content,password,date,admin,deleted) VALUES (?,?,?,?,?,?,?,?,?)',
       );
+
       for (const row of post.rows) {
         insert.run(...row);
       }
+
       // Durable Object KV uses V8's structured-clone wire format, not JSON.
       const put = db.prepare('INSERT INTO _cf_KV (key,value) VALUES (?,?)');
       put.run('likes', serialize(post.likes));
-      put.run('verified', serialize(true));
       db.exec('COMMIT');
     } finally {
       // Closing also rolls back an incomplete transaction on error.
       db.close();
     }
+
     console.info(`Imported ${post.id}: ${post.rows.length} comments, ${post.likes} likes`);
   }
   // No alarms are imported; workerd creates metadata.sqlite on first startup.
